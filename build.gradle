@@ -1,0 +1,63 @@
+plugins {
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    // Loom adds the repositories needed for Minecraft and its libraries automatically.
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+// The MCP server is the whole point of this mod, so the development client arms it by itself:
+// `./gradlew runClient -Pmcp` listens on 25585, `-Pmcp=12345` on a port of your choosing.
+// In a normal install the port comes from config/minecraft-mcp.json instead.
+loom {
+    runs {
+        client {
+            if (project.hasProperty("mcp")) {
+                def mcpPort = project.findProperty("mcp").toString()
+                vmArg "-Dminecraftmcp.port=" + (mcpPort.isEmpty() ? "25585" : mcpPort)
+            }
+        }
+    }
+}
+
+processResources {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+publishing {
+    publications {
+        create("mavenJava", MavenPublication) {
+            from components.java
+        }
+    }
+}

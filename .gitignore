@@ -1,0 +1,12 @@
+# Gradle
+.gradle/
+build/
+dist/
+
+# The development client's own directory
+run/
+
+# IDE
+.idea/
+*.iml
+.vscode/

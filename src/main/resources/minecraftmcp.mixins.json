@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.minecraftmcp.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "ClientAdvancementsAccessor",
+    "KeyboardInputMixin",
+    "LocalPlayerInputMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

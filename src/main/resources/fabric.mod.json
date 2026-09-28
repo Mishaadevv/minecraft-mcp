@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "minecraftmcp",
+  "version": "${version}",
+  "name": "Minecraft MCP",
+  "description": "A Model Context Protocol server inside the game: an AI agent gets tools to look around, walk, mine, craft, fight and read chat, and every one of them runs on the game thread.",
+  "authors": [
+    "Misha Krutoj"
+  ],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.minecraftmcp.MinecraftMcpClient"
+    ]
+  },
+  "mixins": [
+    "minecraftmcp.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
