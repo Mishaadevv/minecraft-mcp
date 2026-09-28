@@ -39,8 +39,12 @@ Point any MCP client at the endpoint and the agent can:
 - **Drive any window**: `mc_state` describes the buttons and fields of whatever screen is open, and `click`
   presses them - including the achievements window, whoever draws it.
 - **Hand back pictures**: `mc_screenshot` saves what the game is showing.
+- **Build structures**: `mc_build` places blocks in patterns to create buildings, walls, or any structure.
+- **Explore terrain**: `mc_explore` scans the area and reports what blocks are available for resource gathering.
+- **Get survival guidance**: `mc_survival` analyzes your situation and gives prioritized recommendations.
+- **Craft with recipes**: `mc_craft` provides crafting instructions for common items.
 
-**10 tools.** See [Tools](#tools).
+**14 tools.** See [Tools](#tools).
 
 ## Install
 
@@ -177,6 +181,10 @@ Two things worth knowing: the server only answers while the game is **in a world
 | `mc_achievements` | open or close the achievements window and report the save's progress |
 | `mc_screenshot` | save a screenshot of the game window |
 | `mc_mods` | which mods this client is running, with their names and versions |
+| `mc_build` | build structures: place blocks in patterns to create buildings, walls, or any structure |
+| `mc_explore` | explore the area around the player and report what blocks are found |
+| `mc_craft` | get crafting instructions for common items |
+| `mc_survival` | get a comprehensive survival status report with prioritized recommendations |
 
 The steps inside `mc_act`:
 
@@ -198,6 +206,8 @@ The steps inside `mc_act`:
 | `{"scan":{"step":30}}` | look around and report the blocks in view |
 | `{"screenshot":{}}` | save a screenshot |
 | `{"wait":{"ticks":20}}` | let the world catch up |
+| `{"build":{"width":3,"height":3,"depth":3,"block":"minecraft:cobblestone","hollow":false}}` | build a structure |
+| `{"explore":{"radius":32,"direction":"forward"}}` | explore the area and report blocks found |
 
 ## How it works
 

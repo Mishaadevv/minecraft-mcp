@@ -48,7 +48,11 @@ public final class AgentState {
 
         LocalPlayer player = client.player;
         if (player == null || client.level == null) {
+            // Still worth reporting the window that is open: an agent standing at the title screen can read
+            // the buttons and press one, which is how it gets into a world without anybody's help.
             state.addProperty("inWorld", false);
+            state.addProperty("screen", client.screen == null ? null : client.screen.getClass().getSimpleName());
+            state.add("gui", client.screen == null ? null : gui(client.screen));
             addChat(state, chat);
             return state;
         }
@@ -69,6 +73,32 @@ public final class AgentState {
             state.addProperty("gameMode", client.gameMode.getPlayerMode().getName());
         }
 
+        // Biome and environment info for better decision making
+        try {
+            var biome = client.level.getBiome(player.blockPosition());
+            String biomeName = biome.unwrap()
+                .map(key -> key.location().toString())
+                .orElse("unknown");
+            state.addProperty("biome", biomeName);
+        } catch (Exception e) {
+            state.addProperty("biome", "unknown");
+        }
+
+        // Light level - important for knowing if mobs can spawn
+        try {
+            state.addProperty("lightLevel", client.level.getMaxLocalRawBrightness(player.blockPosition()));
+        } catch (Exception e) {
+            state.addProperty("lightLevel", -1);
+        }
+
+        // What time it is on the save, and what is out there: the two things that decide whether it is a
+        // sensible moment to go and do anything at all.
+        long dayTime = client.level.getDayTime();
+        state.addProperty("dayTime", dayTime % 24000L);
+        state.addProperty("day", dayTime / 24000L);
+        state.addProperty("night", (dayTime % 24000L) >= 13000L && (dayTime % 24000L) <= 23000L);
+        state.add("threats", threats(client, player));
+
         state.addProperty("screen", client.screen == null ? null : client.screen.getClass().getSimpleName());
         state.add("gui", client.screen == null ? null : gui(client.screen));
         state.add("menu", menu(player));
@@ -83,6 +113,38 @@ public final class AgentState {
         state.add("achievements", achievements(client));
 
         return state;
+    }
+
+    /**
+     * What can hurt the player right now: the monsters in sight, how many and how close. "Nothing in sight"
+     * is the answer that says it is safe to dig, and "a skeleton twelve blocks away" is the answer that says
+     * it is not.
+     */
+    private static JsonObject threats(Minecraft client, LocalPlayer player) {
+        JsonObject result = new JsonObject();
+        List<net.minecraft.world.entity.monster.Monster> monsters = client.level.getEntitiesOfClass(
+                net.minecraft.world.entity.monster.Monster.class, player.getBoundingBox().inflate(24.0D));
+        monsters.removeIf(monster -> !monster.isAlive());
+
+        JsonArray list = new JsonArray();
+        double nearest = Double.MAX_VALUE;
+        for (net.minecraft.world.entity.monster.Monster monster : monsters) {
+            double distance = Math.sqrt(monster.distanceToSqr(player));
+            nearest = Math.min(nearest, distance);
+            if (list.size() < 6) {
+                JsonObject entry = new JsonObject();
+                entry.addProperty("name", monster.getName().getString());
+                entry.addProperty("distance", Math.round(distance * 10.0D) / 10.0D);
+                entry.addProperty("health", round(monster.getHealth()));
+                list.add(entry);
+            }
+        }
+
+        result.add("monsters", list);
+        result.addProperty("count", monsters.size());
+        result.addProperty("nearest", nearest == Double.MAX_VALUE ? -1.0D : Math.round(nearest * 10.0D) / 10.0D);
+        result.addProperty("underwater", player.isUnderWater());
+        return result;
     }
 
     /**

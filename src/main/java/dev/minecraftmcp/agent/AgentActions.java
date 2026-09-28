@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -30,6 +31,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * The verb list of the agent: one JSON object per thing to do, turned into the ticks of work it takes to carry
@@ -57,6 +59,14 @@ public final class AgentActions {
 
         /** What this step did, as it will be handed back to the caller. */
         JsonObject report();
+
+        /**
+         * Whether this step needs a world to be loaded at all. Pressing a button on the title screen, waiting
+         * and taking a screenshot do not, which is how an agent gets itself from the menu into a world.
+         */
+        default boolean needsWorld() {
+            return true;
+        }
     }
 
     private AgentActions() {
@@ -150,6 +160,66 @@ public final class AgentActions {
             return new Wait(ticks(object(spec, "wait"), 20));
         }
 
+        if (spec.has("find")) {
+            JsonObject find = object(spec, "find");
+            List<net.minecraft.world.level.block.Block> wanted = wantedBlocks(find);
+            double radius = find.has("radius") ? find.get("radius").getAsDouble() : 40.0D;
+            int limit = find.has("limit") ? find.get("limit").getAsInt() : 8;
+
+            return new Once(report -> {
+                Minecraft client = Minecraft.getInstance();
+                report.addProperty("action", "find");
+                JsonArray found = AgentWorld.findNearby(client, wanted, radius, limit);
+                report.add("blocks", found);
+                report.addProperty("count", found.size());
+                report.addProperty("radius", radius);
+            });
+        }
+
+        if (spec.has("job")) {
+            JsonObject job = object(spec, "job");
+            return new Once(report -> {
+                Minecraft client = Minecraft.getInstance();
+                report.addProperty("action", "job");
+
+                if (job.has("cancel") && job.get("cancel").getAsBoolean()) {
+                    report.add("job", AgentBridge.stopJob("the agent cancelled it"));
+                    return;
+                }
+                if (!job.has("kind")) {
+                    JsonObject status = AgentBridge.jobStatus();
+                    if (status == null) {
+                        report.addProperty("job", "nothing is running");
+                    } else {
+                        report.add("job", status);
+                    }
+                    return;
+                }
+
+                String kind = job.get("kind").getAsString().toLowerCase(Locale.ROOT);
+                AgentJob next = switch (kind) {
+                    case "walk", "walk_to", "goto" -> AgentJob.walkTo(
+                            job.get("x").getAsDouble(),
+                            job.get("z").getAsDouble(),
+                            job.has("stop") ? job.get("stop").getAsDouble() : 2.0D,
+                            "the spot it was sent to");
+                    case "gather", "chop", "mine" -> {
+                        List<net.minecraft.world.level.block.Block> blocks = wantedBlocks(job);
+                        yield AgentJob.gather(blocks,
+                                job.has("count") ? job.get("count").getAsInt() : 8,
+                                job.has("radius") ? job.get("radius").getAsDouble() : 40.0D,
+                                job.has("block") ? job.get("block").getAsString() : "logs");
+                    }
+                    default -> null;
+                };
+                if (next == null) {
+                    report.addProperty("outcome", "there is no job called \"" + kind + "\"");
+                    return;
+                }
+                report.add("job", AgentBridge.startJob(next));
+            });
+        }
+
         if (spec.has("attack")) {
             return new Attack(ticks(object(spec, "attack"), 1));
         }
@@ -235,6 +305,117 @@ public final class AgentActions {
             });
         }
 
+        if (spec.has("build")) {
+            JsonObject build = object(spec, "build");
+            int width = build.has("width") ? build.get("width").getAsInt() : 3;
+            int height = build.has("height") ? build.get("height").getAsInt() : 3;
+            int depth = build.has("depth") ? build.get("depth").getAsInt() : 3;
+            String blockType = build.has("block") ? build.get("block").getAsString() : "minecraft:cobblestone";
+            boolean hollow = build.has("hollow") && build.get("hollow").getAsBoolean();
+
+            return new Once(report -> {
+                Minecraft client = Minecraft.getInstance();
+                LocalPlayer player = client.player;
+                if (player == null || client.gameMode == null || client.level == null) {
+                    return;
+                }
+
+                report.addProperty("action", "build");
+                report.addProperty("width", width);
+                report.addProperty("height", height);
+                report.addProperty("depth", depth);
+                report.addProperty("block", blockType);
+                report.addProperty("hollow", hollow);
+
+                List<net.minecraft.world.level.block.Block> blocks = AgentWorld.byName(List.of(blockType));
+                if (blocks.isEmpty()) {
+                    report.addProperty("outcome", "unknown block: " + blockType);
+                    return;
+                }
+
+                int placed = 0;
+                int startX = player.getBlockX();
+                int startY = player.getBlockY();
+                int startZ = player.getBlockZ();
+
+                for (int x = 0; x < width; x++) {
+                    for (int y = 0; y < height; y++) {
+                        for (int z = 0; z < depth; z++) {
+                            if (hollow && x > 0 && x < width - 1 && y > 0 && y < height - 1 && z > 0 && z < depth - 1) {
+                                continue;
+                            }
+                            BlockPos pos = new BlockPos(startX + x, startY + y, startZ + z);
+                            BlockState state = client.level.getBlockState(pos);
+                            if (state.isAir()) {
+                                client.gameMode.useItemOn(player, InteractionHand.MAIN_HAND,
+                                        new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false));
+                                placed++;
+                            }
+                        }
+                    }
+                }
+
+                report.addProperty("placed", placed);
+                report.addProperty("outcome", "placed " + placed + " blocks");
+            });
+        }
+
+        if (spec.has("explore")) {
+            JsonObject explore = object(spec, "explore");
+            int radius = explore.has("radius") ? explore.get("radius").getAsInt() : 32;
+            String direction = explore.has("direction") ? explore.get("direction").getAsString() : "forward";
+
+            return new Once(report -> {
+                Minecraft client = Minecraft.getInstance();
+                LocalPlayer player = client.player;
+                if (player == null || client.level == null) {
+                    return;
+                }
+
+                report.addProperty("action", "explore");
+                report.addProperty("radius", radius);
+                report.addProperty("direction", direction);
+
+                int startX = player.getBlockX();
+                int startY = player.getBlockY();
+                int startZ = player.getBlockZ();
+
+                Map<String, Integer> blockCounts = new java.util.HashMap<>();
+                int explored = 0;
+
+                for (int x = -radius; x <= radius; x++) {
+                    for (int z = -radius; z <= radius; z++) {
+                        for (int y = -5; y <= 5; y++) {
+                            BlockPos pos = new BlockPos(startX + x, startY + y, startZ + z);
+                            if (client.level.hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) {
+                                BlockState state = client.level.getBlockState(pos);
+                                if (!state.isAir()) {
+                                    String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+                                    blockCounts.merge(blockId, 1, Integer::sum);
+                                    explored++;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                report.addProperty("explored", explored);
+                report.addProperty("uniqueBlocks", blockCounts.size());
+
+                JsonArray blocksArray = new JsonArray();
+                blockCounts.entrySet().stream()
+                        .sorted(java.util.Map.Entry.<String, Integer>comparingByValue().reversed())
+                        .limit(20)
+                        .forEach(entry -> {
+                            JsonObject block = new JsonObject();
+                            block.addProperty("block", entry.getKey());
+                            block.addProperty("count", entry.getValue());
+                            blocksArray.add(block);
+                        });
+                report.add("blocks", blocksArray);
+            });
+        }
+
         if (spec.has("use")) {
             return new Once(report -> {
                 Minecraft client = Minecraft.getInstance();
@@ -297,20 +478,22 @@ public final class AgentActions {
                 Minecraft client = Minecraft.getInstance();
                 LocalPlayer player = client.player;
                 report.addProperty("action", "menu");
+                if (open.equalsIgnoreCase("close")) {
+                    client.setScreen(null);
+                    report.addProperty("menu", "closed");
+                    return;
+                }
                 if (player == null) {
                     return;
                 }
                 if (open.equalsIgnoreCase("inventory")) {
                     client.setScreen(new InventoryScreen(player));
                     report.addProperty("menu", "inventory");
-                } else if (open.equalsIgnoreCase("close")) {
-                    client.setScreen(null);
-                    report.addProperty("menu", "closed");
                 } else {
                     // Chests, furnaces, anvils and trades open themselves when the block or villager is used.
                     report.addProperty("outcome", "the game opens " + open + " itself - use the block instead");
                 }
-            });
+            }, "close".equalsIgnoreCase(open));
         }
 
         if (spec.has("drop")) {
@@ -352,7 +535,7 @@ public final class AgentActions {
                 });
                 report.addProperty("action", "screenshot");
                 report.addProperty("path", client.gameDirectory + "\\screenshots");
-            });
+            }, false);
         }
 
         if (spec.has("respawn")) {
@@ -411,7 +594,7 @@ public final class AgentActions {
                 report.addProperty("screen", client.screen == null
                         ? "closed"
                         : client.screen.getClass().getSimpleName());
-            });
+            }, false);
         }
 
         if (spec.has("window")) {
@@ -430,10 +613,23 @@ public final class AgentActions {
                 report.addProperty("screen", client.screen == null
                         ? "closed"
                         : client.screen.getClass().getSimpleName());
-            });
+            }, !open);
         }
 
         throw new IllegalArgumentException("unknown step: " + spec.keySet());
+    }
+
+    /** Which blocks a job or a search means: named ones, or a tree's worth of logs by default. */
+    private static List<net.minecraft.world.level.block.Block> wantedBlocks(JsonObject spec) {
+        if (spec.has("blocks")) {
+            List<String> ids = new ArrayList<>();
+            spec.getAsJsonArray("blocks").forEach(id -> ids.add(id.getAsString()));
+            return AgentWorld.byName(ids);
+        }
+        if (spec.has("block")) {
+            return AgentWorld.byName(List.of(spec.get("block").getAsString()));
+        }
+        return AgentWorld.logs();
     }
 
     // ------------------------------------------------------------------ the steps
@@ -457,10 +653,21 @@ public final class AgentActions {
     /** Work that happens in a single tick: looking, clicking, sending a line, opening a window. */
     private static final class Once extends Base {
         private final java.util.function.Consumer<JsonObject> work;
+        private final boolean needsWorld;
         private boolean done;
 
         private Once(java.util.function.Consumer<JsonObject> work) {
+            this(work, true);
+        }
+
+        private Once(java.util.function.Consumer<JsonObject> work, boolean needsWorld) {
             this.work = work;
+            this.needsWorld = needsWorld;
+        }
+
+        @Override
+        public boolean needsWorld() {
+            return needsWorld;
         }
 
         @Override
@@ -541,6 +748,11 @@ public final class AgentActions {
         @Override
         public void tick(Minecraft client) {
             remaining--;
+        }
+
+        @Override
+        public boolean needsWorld() {
+            return false;
         }
 
         @Override

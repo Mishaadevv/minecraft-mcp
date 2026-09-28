@@ -51,8 +51,37 @@ public final class AgentBridge {
     private static final List<String> CHAT = new ArrayList<>();
 
     private static Task running;
+    private static AgentJob job;
     private static volatile boolean started;
     private static volatile boolean inWorld;
+
+    /** The job the game is carrying out on its own, if there is one. */
+    public static AgentJob job() {
+        return job;
+    }
+
+    /**
+     * Hands a job to the game. One at a time: a second job replaces the first, after stopping it cleanly so
+     * the keys are never left held down.
+     */
+    public static JsonObject startJob(AgentJob next) {
+        if (!started) {
+            return error("the MCP server is not running");
+        }
+        if (job != null && !job.finished()) {
+            job.stop(Minecraft.getInstance(), "replaced by a new job");
+        }
+        job = next;
+        return next.status(Minecraft.getInstance());
+    }
+
+    public static JsonObject stopJob(String why) {
+        if (job == null) {
+            return error("no job is running");
+        }
+        job.stop(Minecraft.getInstance(), why);
+        return job.status(Minecraft.getInstance());
+    }
 
     private AgentBridge() {
     }
@@ -179,14 +208,23 @@ public final class AgentBridge {
 
         if (running == null) {
             running = PENDING.poll();
-            if (running == null) {
-                return;
+            if (running != null) {
+                running.deadline = System.currentTimeMillis() + Math.max(5_000L, running.ticks * 60L);
             }
-            running.deadline = System.currentTimeMillis() + Math.max(5_000L, running.ticks * 60L);
         }
 
-        if (!inWorld) {
-            finish(client, running, "the game is not in a world");
+        if (running == null) {
+            // Nothing was asked for, so the job gets the tick. This is what lets the game play on its own
+            // while the agent is thinking, or has stopped asking.
+            if (job != null) {
+                if (job.finished()) {
+                    AgentInput.release();
+                } else if (inWorld) {
+                    job.tick(client);
+                } else {
+                    job.stop(client, "the game is not in a world");
+                }
+            }
             return;
         }
 
@@ -201,6 +239,14 @@ public final class AgentBridge {
                 return;
             }
             AgentActions.Step step = running.work.get(0);
+
+            // Steps that only touch the screen - pressing a button, waiting, a screenshot - also work before a
+            // world is loaded, which is how an agent opens the game and walks itself into a save.
+            if (!inWorld && step.needsWorld()) {
+                finish(client, running, "the game is not in a world");
+                return;
+            }
+
             step.tick(client);
             if (step.finished()) {
                 running.work.remove(0);
@@ -245,6 +291,11 @@ public final class AgentBridge {
         task.report.add("state", AgentState.snapshot(client, STATE_RADIUS, CHAT));
         task.done.complete(task.report);
         running = null;
+    }
+
+    /** The job, as the agent sees it: null when nothing is running. */
+    public static JsonObject jobStatus() {
+        return job == null ? null : job.status(Minecraft.getInstance());
     }
 
     public static JsonObject error(String message) {
