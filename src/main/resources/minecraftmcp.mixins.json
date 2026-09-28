@@ -4,6 +4,7 @@
   "package": "dev.minecraftmcp.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "BorderlessFullscreenMixin",
     "ClientAdvancementsAccessor",
     "KeyboardInputMixin",
     "LocalPlayerInputMixin"

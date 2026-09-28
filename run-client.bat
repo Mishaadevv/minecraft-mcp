@@ -70,6 +70,7 @@ if defined CHECKONLY (
 echo  [Minecraft MCP] Command: gradlew.bat runClient -Pmcp --console=plain
 if not "%~1"=="" echo  [Minecraft MCP] World:   %~1
 echo  [Minecraft MCP] Server:  http://127.0.0.1:25585/mcp
+echo  [Minecraft MCP] Mode:    Borderless Fullscreen
 echo.
 echo  [Minecraft MCP] Starting Minecraft with the mod - this window shows the log.
 echo.

@@ -76,10 +76,7 @@ public final class AgentState {
         // Biome and environment info for better decision making
         try {
             var biome = client.level.getBiome(player.blockPosition());
-            String biomeName = biome.unwrap()
-                .map(key -> key.location().toString())
-                .orElse("unknown");
-            state.addProperty("biome", biomeName);
+            state.addProperty("biome", biome.value().toString());
         } catch (Exception e) {
             state.addProperty("biome", "unknown");
         }

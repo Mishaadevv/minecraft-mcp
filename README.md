@@ -66,6 +66,12 @@ irm https://raw.githubusercontent.com/Mishaadevv/minecraft-mcp/main/install.ps1 
 The mod is one jar with no dependency but Fabric API. It can also be built from source (`./gradlew build`) or
 installed by hand: drop it in `mods/`. On Windows, `build-mod.bat` builds it and offers to install it.
 
+**Borderless Fullscreen Mode:**
+
+The game automatically starts in borderless fullscreen mode so you can watch the AI agent play. This gives you
+a fullscreen-like experience while still allowing easy access to other windows. You can disable this in
+`config/minecraft-mcp.json` by setting `"borderlessFullscreen": false`.
+
 ## Point your client at it
 
 The whole configuration is one URL:

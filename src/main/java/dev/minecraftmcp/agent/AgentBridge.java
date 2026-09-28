@@ -98,8 +98,10 @@ public final class AgentBridge {
             } else {
                 config.addProperty("enabled", true);
                 config.addProperty("port", DEFAULT_PORT);
+                config.addProperty("borderlessFullscreen", true);
                 config.addProperty("_readme", "Local only: the server listens on 127.0.0.1 and can control the "
-                        + "player. Set enabled to false to switch it off.");
+                        + "player. Set enabled to false to switch it off. borderlessFullscreen makes the game "
+                        + "start in borderless fullscreen mode so you can watch the agent play.");
                 Files.createDirectories(file.getParent());
                 Files.writeString(file, GSON.toJson(config) + System.lineSeparator(), StandardCharsets.UTF_8);
                 MinecraftMcpClient.LOGGER.info("Wrote a fresh {} - the MCP server is on by default", file);
@@ -121,6 +123,19 @@ public final class AgentBridge {
             return 0;
         }
         return config.has("port") ? config.get("port").getAsInt() : DEFAULT_PORT;
+    }
+
+    /** Whether the game should start in borderless fullscreen mode. */
+    public static boolean isBorderlessFullscreen() {
+        Path file = FabricLoader.getInstance().getConfigDir().resolve(CONFIG_FILE);
+        try {
+            if (Files.exists(file)) {
+                JsonObject config = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+                return !config.has("borderlessFullscreen") || config.get("borderlessFullscreen").getAsBoolean();
+            }
+        } catch (Exception ignored) {
+        }
+        return true;
     }
 
     /** Starts listening, or logs why it could not. A port of 0 or less leaves the whole mod asleep. */
